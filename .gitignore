@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.tokens-saver-index.json
+medicion/results.md
+.env
+openspec/
