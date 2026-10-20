@@ -51,15 +51,25 @@ GENERATED_PATTERNS = ["*.min.js", "*.min.css", "*.map", "*.lock", "package-lock.
 ALWAYS_INCLUDE_DIRS = ["openspec"]
 PROJECT_IGNORE_FILE = ".tokens-saver-ignore"
 
-# values of credential-like keys (yaml, json, ini, php arrays) are masked before indexing
-SECRET_VALUE_RE = re.compile(
-    r"""(?im)(['"]?[\w.-]*(?:pass(?:word|wd)?|pwd|secret|token|api[_-]?key|apikey|private[_-]?key|access[_-]?key)[\w.-]*['"]?\]?[ \t]*(?:=>|:|=)[ \t]*)"""
-    r"""(['"]?)(?![$\[{(]|null\b|true\b|false\b|~(?!\S))([^'"\s,;#]+)(['"]?)"""
+# bump to force a full re-index when chunk content rules change
+INDEX_VERSION = 2
+
+# values of credential-like keys are masked before indexing
+_SECRET_KEY = r"""['"]?[\w.-]*(?:pass(?:word|wd)?|pwd|secret|token|api[_-]?key|apikey|private[_-]?key|access[_-]?key)[\w.-]*['"]?\]?"""
+# quoted literal in any file: 'password' => 'x', "api_key": "x", PASS="x"
+QUOTED_SECRET_RE = re.compile(rf"""(?i)({_SECRET_KEY}[ \t]*(?:=>|:|=)[ \t]*)(['"])([^'"\n]+)\2""")
+# unquoted scalar in config files only: "password: x", "PASS=x"
+CONFIG_SECRET_RE = re.compile(
+    rf"""(?im)^([ \t#-]*{_SECRET_KEY}(?::[ \t]+|[ \t]*=[ \t]*))(?!['"{{\[]|null\b|true\b|false\b|~(?!\S))([^\s#]+)"""
 )
+CONFIG_EXTS = {".yml", ".yaml", ".ini", ".cfg", ".toml", ".conf", ".properties"}
 
 
-def redact(text: str) -> str:
-    return SECRET_VALUE_RE.sub(r"\1\2[REDACTED]\4", text)
+def redact(text: str, path: str = "") -> str:
+    text = QUOTED_SECRET_RE.sub(r"\1\2[REDACTED]\2", text)
+    if Path(path).suffix.lower() in CONFIG_EXTS:
+        text = CONFIG_SECRET_RE.sub(r"\1[REDACTED]", text)
+    return text
 
 
 def log(msg: str):
@@ -237,8 +247,8 @@ def main():
 
     # (re)create the collection if missing or built with another model
     exists = client.collection_exists(collection)
-    if exists and state.get("model") != EMBEDDING_MODEL:
-        log(f"Collection '{collection}' was built with another model; rebuilding")
+    if exists and (state.get("model"), state.get("version")) != (EMBEDDING_MODEL, INDEX_VERSION):
+        log(f"Collection '{collection}' was built with another model or index version; rebuilding")
         client.delete_collection(collection)
         exists = False
     if not exists:
@@ -271,7 +281,7 @@ def main():
         except OSError:
             current.pop(rel, None)
             continue
-        all_chunks.extend(chunk_text(redact(text), rel))
+        all_chunks.extend(chunk_text(redact(text, rel), rel))
 
     if all_chunks:
         log(f"Embedding {len(all_chunks)} chunks…")
@@ -300,7 +310,7 @@ def main():
         pickle.dump({"bm25": bm25, "ids": ids, "payloads": payloads}, fh)
     log(f"BM25 index saved → {bm25_path(collection)} ({len(ids)} chunks)")
 
-    save_state(st_path, {"root": str(root), "model": EMBEDDING_MODEL, "files": current})
+    save_state(st_path, {"root": str(root), "model": EMBEDDING_MODEL, "version": INDEX_VERSION, "files": current})
     log("Done.")
 
 

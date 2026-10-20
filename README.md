@@ -83,6 +83,16 @@ Compara los tokens recuperados frente a leer **completos los ficheros donde est�
 sesión: no mide cuántos ficheros habría abierto Claude ni la calidad de la respuesta. No hay
 todavía una medición del ahorro en sesiones reales.
 
+Para sesiones reales, haz la misma pregunta en dos conversaciones nuevas (una pidiendo usar
+`search_context` y otra pidiendo no usarlo) y compara sus transcripts:
+
+```bash
+.venv/bin/python medicion/session_tokens.py /ruta/al/proyecto --last 2
+```
+
+Muestra por sesión el contexto final, la entrada total procesada, la salida y los tokens que
+aportó cada tool (Read, Grep, search_context…).
+
 ## Variables de entorno
 
 | Variable | Default | Descripción |
